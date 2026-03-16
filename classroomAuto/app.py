@@ -1,12 +1,12 @@
-import os
 import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook
-
+import json
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+import os
 
 # -----------------------------
 # SCOPES necesarios de Classroom
@@ -29,8 +29,10 @@ def get_credentials():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            import os, json
-            flow = InstalledAppFlow.from_client_config(json.loads(os.environ["CREDENTIALS_JSON"]), SCOPES)
+            flow = InstalledAppFlow.from_client_config(
+                json.loads(st.secrets["CREDENTIALS_JSON"]),
+                SCOPES
+            )
             creds = flow.run_local_server(port=0)
 
         with open("token.json", "w") as token_file:
@@ -39,36 +41,28 @@ def get_credentials():
     return creds
 
 # -----------------------------
-# Función para obtener cursos
+# Funciones de Google Classroom
 # -----------------------------
 def get_courses(service):
     results = service.courses().list().execute()
     return results.get("courses", [])
 
-# -----------------------------
-# Función para obtener tareas
-# -----------------------------
 def get_coursework(service, course_id):
     results = service.courses().courseWork().list(courseId=course_id).execute()
     return results.get("courseWork", [])
 
-# -----------------------------
-# Función para obtener alumnos
-# -----------------------------
 def get_students(service, course_id):
     students_request = service.courses().students().list(courseId=course_id)
     students = {}
     while students_request is not None:
         response = students_request.execute()
         for s in response.get("students", []):
-            name = f"{s['profile']['name'].get('familyName', '')} {s['profile']['name'].get('givenName', '')}"
+            name = f"{s['profile']['name'].get('familyName','')} {s['profile']['name'].get('givenName','')}"
             students[s["userId"]] = name
         students_request = service.courses().students().list_next(students_request, response)
+    # Ordenar alfabéticamente por apellido
     return dict(sorted(students.items(), key=lambda x: x[1].lower()))
 
-# -----------------------------
-# Función para obtener entregas
-# -----------------------------
 def get_submissions(service, course_id, task_id):
     submissions = []
     request = service.courses().courseWork().studentSubmissions().list(
@@ -110,35 +104,36 @@ st.session_state.selected_course = next(course for course in courses if course["
 selected_course_id = st.session_state.selected_course["id"]
 
 # -----------------------------
-# Form para seleccionar tareas
+# Selección de tareas con multiselect
 # -----------------------------
 tasks = get_coursework(service, selected_course_id)
 if not tasks:
     st.warning("No hay tareas en este curso.")
     st.stop()
 
+# Numerar tareas
 task_options = [f"{i+1} - {task['title']}" for i, task in enumerate(tasks)]
 
-with st.form("tareas_form"):
-    selected_task_titles = st.multiselect(
-        "Selecciona tareas en el orden deseado",
-        options=task_options,
-        default=st.session_state.selected_tasks
-    )
-    submitted = st.form_submit_button("Confirmar selección de tareas")
+selected_task_titles = st.multiselect(
+    "Selecciona tareas en el orden que desees:",
+    options=task_options,
+    default=st.session_state.selected_tasks
+)
 
-if submitted:
+if st.button("Confirmar selección de tareas"):
     st.session_state.selected_tasks = selected_task_titles
+    st.success(f"Tareas seleccionadas: {st.session_state.selected_tasks}")
 
 # -----------------------------
-# Generar Excel (fuera del form)
+# Generar Excel
 # -----------------------------
 if st.session_state.selected_tasks:
     if st.button("Generar Excel"):
         students = get_students(service, selected_course_id)
         grades = {name: [] for name in students.values()}
 
-        selected_tasks_objs = [tasks[int(t.split(" - ")[0])-1] for t in st.session_state.selected_tasks]
+        # Mantener orden de selección
+        selected_tasks_objs = [tasks[int(t.split(" - ")[0]) - 1] for t in st.session_state.selected_tasks]
 
         for task in selected_tasks_objs:
             submissions = get_submissions(service, selected_course_id, task["id"])
@@ -159,7 +154,7 @@ if st.session_state.selected_tasks:
             for student_id, name in students.items():
                 grades[name].append(results_by_student.get(student_id, 0))
 
-        # Crear Excel
+        # Crear DataFrame
         data = []
         for student, scores in grades.items():
             promedio = round(sum(scores)/len(scores), 2) if scores else 0
@@ -168,6 +163,7 @@ if st.session_state.selected_tasks:
         columns = ["Alumno"] + st.session_state.selected_tasks + ["Promedio"]
         df = pd.DataFrame(data, columns=columns)
 
+        # Guardar Excel
         file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
         df.to_excel(file_name, index=False)
 
@@ -183,6 +179,7 @@ if st.session_state.selected_tasks:
             ws.column_dimensions[column_letter].width = max_length + 2
         wb.save(file_name)
 
+        # Botón de descarga
         st.success(f"Archivo Excel generado correctamente: `{file_name}`")
         st.download_button(
             label="Descargar Excel",
