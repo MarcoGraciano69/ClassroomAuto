@@ -101,18 +101,29 @@ def main():
         st.warning("No hay cursos.")
         return
 
-    selected_course = st.selectbox("Selecciona curso", [c["name"] for c in courses])
-    course_id = next(c["id"] for c in courses if c["name"] == selected_course)
+    selected_course_name = st.selectbox("Selecciona curso", [c["name"] for c in courses])
+    course_id = next(c["id"] for c in courses if c["name"] == selected_course_name)
 
     tasks = get_coursework(service, course_id)
-    selected_tasks = st.multiselect("Selecciona tareas", [t["title"] for t in tasks])
+    # Enumeración de tareas: "1 - Tarea..."
+    task_options = [f"{i+1} - {task['title']}" for i, task in enumerate(tasks)]
+    
+    selected_labels = st.multiselect("Selecciona tareas", task_options)
 
     if st.button("Generar Excel"):
+        if not selected_labels:
+            st.error("Por favor, selecciona al menos una tarea.")
+            return
+
         students = get_students(service, course_id)
         grades = {name: [] for name in students.values()}
         
-        for title in selected_tasks:
-            task = next(t for t in tasks if t["title"] == title)
+        # Recuperar objetos de tareas originales mediante el índice
+        selected_tasks_objs = [tasks[int(label.split(" - ")[0]) - 1] for label in selected_labels]
+        # Títulos limpios para el encabezado del Excel
+        clean_titles = [t["title"] for t in selected_tasks_objs]
+
+        for task in selected_tasks_objs:
             submissions = get_submissions(service, course_id, task["id"])
             results = {sub["userId"]: (10 if any(e.get("stateHistory", {}).get("state") == "TURNED_IN" for e in sub.get("submissionHistory", [])) or (sub.get("assignedGrade", 0) > 0) else 0) for sub in submissions}
             
@@ -120,12 +131,12 @@ def main():
                 grades[name].append(results.get(uid, 0))
 
         data = [[name] + scores + [round(sum(scores)/len(scores), 2) if scores else 0] for name, scores in grades.items()]
-        df = pd.DataFrame(data, columns=["Alumno"] + selected_tasks + ["Promedio"])
+        df = pd.DataFrame(data, columns=["Alumno"] + clean_titles + ["Promedio"])
         
-        file_name = "calificaciones.xlsx"
+        file_name = f"calificaciones_{selected_course_name.replace(' ', '_')}.xlsx"
         df.to_excel(file_name, index=False)
         
-        # Ajustar ancho (logica original)
+        # Ajustar ancho de columnas
         wb = load_workbook(file_name)
         ws = wb.active
         for col in ws.columns:
