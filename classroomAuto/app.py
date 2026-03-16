@@ -40,13 +40,18 @@ def get_credentials():
 
     code = query_params["code"]
 
+    # ⚠️ Intercambiar el código por token
     flow.fetch_token(code=code)
 
     creds = flow.credentials
 
+    # guardar credenciales
     st.session_state.credentials = creds
 
-    return creds
+    # ⚠️ eliminar el code de la URL para evitar reuso
+    st.query_params.clear()
+
+    st.rerun()
 
 
 def get_courses(service):
