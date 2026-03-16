@@ -13,47 +13,55 @@ SCOPES = [
 
 REDIRECT_URI = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
 
+import streamlit as st
+import json
 from google_auth_oauthlib.flow import Flow
 
 def get_credentials():
-
+    # 1. Si ya tenemos credenciales en sesión, retornarlas de inmediato
     if "creds" in st.session_state:
         return st.session_state.creds
 
+    # Configuración del Flow
+    client_config = json.loads(st.secrets["CREDENTIALS_JSON"])
     flow = Flow.from_client_config(
-        json.loads(st.secrets["CREDENTIALS_JSON"]),
+        client_config,
         scopes=SCOPES,
         redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
     )
 
+    # 2. Verificar si venimos de un redireccionamiento de Google
     query_params = st.query_params
+    if "code" in query_params:
+        code = query_params["code"]
+        try:
+            # Intercambiar código por token
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            
+            # Guardar en session_state
+            st.session_state.creds = creds
+            
+            # LIMPIAR URL: Esto es vital para evitar que al recargar 
+            # intente usar el mismo código.
+            st.query_params.clear()
+            st.rerun() 
+            
+        except Exception as e:
+            st.error(f"Error al obtener el token: {e}")
+            st.stop()
 
-    # Si no hay código, mostrar botón login
-    if "code" not in query_params:
+    # 3. Si no hay credenciales ni código en URL, mostrar botón de login
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="consent"
+    )
 
-        auth_url, _ = flow.authorization_url(
-            access_type="offline",
-            prompt="consent"
-        )
-
-        st.title("🔑 Iniciar sesión con Google")
-        st.link_button("Login con Google", auth_url)
-
-        st.stop()
-
-    # Si Google regresó con código
-    code = query_params["code"]
-
-    flow.fetch_token(code=code)
-
-    creds = flow.credentials
-
-    st.session_state.creds = creds
-
-    # limpiar parámetros de URL
-    st.query_params.clear()
-
-    st.rerun()
+    st.title("Login con Google")
+    st.write("Para continuar, por favor inicia sesión.")
+    st.link_button("🔑 Iniciar sesión con Google", auth_url)
+    st.stop()
 
 
 def get_courses(service):
