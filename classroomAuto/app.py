@@ -24,9 +24,10 @@ def get_credentials():
 
         flow = InstalledAppFlow.from_client_config(
             json.loads(st.secrets["CREDENTIALS_JSON"]),
-            SCOPES
+            SCOPES,
+            redirect_uri="http://localhost"
         )
-
+        
         auth_url, _ = flow.authorization_url(prompt="consent")
 
         st.title("🔑 Autorizar acceso a Google Classroom")
