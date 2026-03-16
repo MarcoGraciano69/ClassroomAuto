@@ -43,10 +43,7 @@ def get_credentials():
 
         if code:
 
-            flow.fetch_token(
-                code=code,
-                redirect_uri="http://localhost"
-            )
+            flow.fetch_token(code=code)
 
             st.session_state.creds = flow.credentials
             st.rerun()
