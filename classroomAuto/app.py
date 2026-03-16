@@ -13,44 +13,47 @@ SCOPES = [
 
 REDIRECT_URI = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
 
+from google_auth_oauthlib.flow import Flow
+
 def get_credentials():
 
-    if "credentials" in st.session_state:
-        return st.session_state.credentials
+    if "creds" in st.session_state:
+        return st.session_state.creds
 
-    flow = InstalledAppFlow.from_client_config(
+    flow = Flow.from_client_config(
         json.loads(st.secrets["CREDENTIALS_JSON"]),
-        SCOPES
+        scopes=SCOPES,
+        redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
     )
 
-    # URL de redirección
-    flow.redirect_uri = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
+    query_params = st.query_params
 
-    auth_url, _ = flow.authorization_url(
-        prompt="consent",
-        access_type="offline"
-    )
+    # Si no hay código, mostrar botón login
+    if "code" not in query_params:
 
-    st.title("🔑 Autorizar acceso a Google Classroom")
-
-    st.link_button("Autorizar con Google", auth_url)
-
-    st.write("Después de autorizar, copia el código de la URL")
-
-    code = st.text_input("Pega el código aquí")
-
-    if code:
-
-        flow.fetch_token(
-            code=code,
-            redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            prompt="consent"
         )
 
-        st.session_state.credentials = flow.credentials
+        st.title("🔑 Iniciar sesión con Google")
+        st.link_button("Login con Google", auth_url)
 
-        st.rerun()
+        st.stop()
 
-    st.stop()
+    # Si Google regresó con código
+    code = query_params["code"]
+
+    flow.fetch_token(code=code)
+
+    creds = flow.credentials
+
+    st.session_state.creds = creds
+
+    # limpiar parámetros de URL
+    st.query_params.clear()
+
+    st.rerun()
 
 
 def get_courses(service):
