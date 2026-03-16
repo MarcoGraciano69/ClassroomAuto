@@ -23,19 +23,28 @@ def get_credentials():
         SCOPES
     )
 
-    auth_url, _ = flow.authorization_url(prompt="consent")
+    # URL de redirección
+    flow.redirect_uri = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
+
+    auth_url, _ = flow.authorization_url(
+        prompt="consent",
+        access_type="offline"
+    )
 
     st.title("🔑 Autorizar acceso a Google Classroom")
 
     st.link_button("Autorizar con Google", auth_url)
 
-    st.write("Después de autorizar, copia el código de la URL.")
+    st.write("Después de autorizar, copia el código de la URL")
 
     code = st.text_input("Pega el código aquí")
 
     if code:
 
-        flow.fetch_token(code=code)
+        flow.fetch_token(
+            code=code,
+            redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
+        )
 
         st.session_state.credentials = flow.credentials
 
