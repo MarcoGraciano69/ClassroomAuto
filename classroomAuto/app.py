@@ -18,48 +18,50 @@ import json
 from google_auth_oauthlib.flow import Flow
 
 def get_credentials():
-    # 1. Si ya tenemos credenciales en sesión, retornarlas de inmediato
     if "creds" in st.session_state:
         return st.session_state.creds
 
-    # Configuración del Flow
     client_config = json.loads(st.secrets["CREDENTIALS_JSON"])
-    flow = Flow.from_client_config(
-        client_config,
-        scopes=SCOPES,
-        redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
-    )
+    
+    # Si no hay un flow activo en la sesión, lo creamos
+    if "oauth_flow" not in st.session_state:
+        st.session_state.oauth_flow = Flow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
+        )
 
-    # 2. Verificar si venimos de un redireccionamiento de Google
     query_params = st.query_params
+
+    # Paso 2: El usuario regresa de Google con el 'code'
     if "code" in query_params:
-        code = query_params["code"]
         try:
-            # Intercambiar código por token
-            flow.fetch_token(code=code)
-            creds = flow.credentials
+            # USAMOS EL FLOW GUARDADO para que mantenga el code_verifier interno
+            flow = st.session_state.oauth_flow
+            flow.fetch_token(code=query_params["code"])
             
-            # Guardar en session_state
+            creds = flow.credentials
             st.session_state.creds = creds
             
-            # LIMPIAR URL: Esto es vital para evitar que al recargar 
-            # intente usar el mismo código.
+            # Limpieza y reinicio
+            del st.session_state.oauth_flow  # Ya no necesitamos el flow
             st.query_params.clear()
-            st.rerun() 
-            
+            st.rerun()
         except Exception as e:
-            st.error(f"Error al obtener el token: {e}")
+            st.error(f"Error crítico en OAuth: {e}")
+            # Si falla, reseteamos el flujo para permitir reintento
+            if "oauth_flow" in st.session_state:
+                del st.session_state.oauth_flow
             st.stop()
 
-    # 3. Si no hay credenciales ni código en URL, mostrar botón de login
-    auth_url, _ = flow.authorization_url(
+    # Paso 1: Generar URL de autorización
+    auth_url, _ = st.session_state.oauth_flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="consent"
     )
 
     st.title("Login con Google")
-    st.write("Para continuar, por favor inicia sesión.")
     st.link_button("🔑 Iniciar sesión con Google", auth_url)
     st.stop()
 
