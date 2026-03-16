@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook
 import json
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 SCOPES = [
@@ -18,40 +18,30 @@ def get_credentials():
     if "credentials" in st.session_state:
         return st.session_state.credentials
 
-    flow = Flow.from_client_config(
+    flow = InstalledAppFlow.from_client_config(
         json.loads(st.secrets["CREDENTIALS_JSON"]),
-        scopes=SCOPES,
-        redirect_uri=REDIRECT_URI
+        SCOPES
     )
 
-    query_params = st.query_params
+    auth_url, _ = flow.authorization_url(prompt="consent")
 
-    if "code" not in query_params:
+    st.title("🔑 Autorizar acceso a Google Classroom")
 
-        auth_url, _ = flow.authorization_url(
-            access_type="offline",
-            prompt="consent"
-        )
+    st.link_button("Autorizar con Google", auth_url)
 
-        st.title("Login con Google")
-        st.link_button("Iniciar sesión con Google", auth_url)
+    st.write("Después de autorizar, copia el código de la URL.")
 
-        st.stop()
+    code = st.text_input("Pega el código aquí")
 
-    code = query_params["code"]
+    if code:
 
-    # ⚠️ Intercambiar el código por token
-    flow.fetch_token(code=code)
+        flow.fetch_token(code=code)
 
-    creds = flow.credentials
+        st.session_state.credentials = flow.credentials
 
-    # guardar credenciales
-    st.session_state.credentials = creds
+        st.rerun()
 
-    # ⚠️ eliminar el code de la URL para evitar reuso
-    st.query_params.clear()
-
-    st.rerun()
+    st.stop()
 
 
 def get_courses(service):
