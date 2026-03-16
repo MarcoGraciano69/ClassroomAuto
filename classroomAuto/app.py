@@ -28,6 +28,9 @@ def get_credentials():
             redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
         )
 
+        query_params = st.query_params
+        code = query_params.get("code")
+
         auth_url, _ = flow.authorization_url(
             prompt="consent"
         )
