@@ -25,7 +25,7 @@ def get_credentials():
         flow = InstalledAppFlow.from_client_config(
             json.loads(st.secrets["CREDENTIALS_JSON"]),
             SCOPES,
-            redirect_uri="http://localhost"
+            redirect_uri="https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
         )
 
         auth_url, _ = flow.authorization_url(
