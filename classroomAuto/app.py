@@ -99,8 +99,8 @@ def get_students(_, course_id):
 
     return dict(sorted(students.items(), key=lambda x: x[1].lower()))
 
-@st.cache_data(ttl=300)
-def get_submissions(_, course_id, task_id):
+
+def get_submissions(service, course_id, task_id):
     submissions = []
     request = _.courses().courseWork().studentSubmissions().list(
         courseId=course_id,
@@ -187,28 +187,31 @@ if st.session_state.selected_tasks:
 
                 # 🔥 PARALELIZACIÓN
                 def process_task(task):
-                    submissions = get_submissions(service, selected_course_id, task["id"])
+                    # 🔥 crear service independiente por thread
+                    local_service = build("classroom", "v1", credentials=creds)
+                
+                    submissions = get_submissions(local_service, selected_course_id, task["id"])
                     results_by_student = {}
-
+                
                     for sub in submissions:
                         student_id = sub["userId"]
                         history = sub.get("submissionHistory", [])
-
+                
                         entrego = any(
                             "stateHistory" in e and e["stateHistory"]["state"] == "TURNED_IN"
                             for e in history
                         )
-
+                
                         assigned = sub.get("assignedGrade")
-
+                
                         if not entrego and assigned and assigned > 0:
                             entrego = True
-
+                
                         results_by_student[student_id] = 10 if entrego else 0
-
+                
                     return results_by_student
 
-                with ThreadPoolExecutor(max_workers=5) as executor:
+                with ThreadPoolExecutor(max_workers=3) as executor:
                     results = list(executor.map(process_task, selected_tasks_objs))
 
                 for results_by_student in results:
