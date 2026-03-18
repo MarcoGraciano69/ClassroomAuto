@@ -74,18 +74,21 @@ def get_credentials():
     st.stop()
 
 # -----------------------------
-# Funciones de Classroom
+# Funciones con CACHÉ 🔥
 # -----------------------------
-def get_courses(service):
-    results = service.courses().list().execute()
+@st.cache_data(ttl=300)
+def get_courses(_):
+    results = _.courses().list().execute()
     return results.get("courses", [])
 
-def get_coursework(service, course_id):
-    results = service.courses().courseWork().list(courseId=course_id).execute()
+@st.cache_data(ttl=300)
+def get_coursework(_, course_id):
+    results = _.courses().courseWork().list(courseId=course_id).execute()
     return results.get("courseWork", [])
 
-def get_students(service, course_id):
-    students_request = service.courses().students().list(courseId=course_id)
+@st.cache_data(ttl=300)
+def get_students(_, course_id):
+    students_request = _.courses().students().list(courseId=course_id)
     students = {}
 
     while students_request is not None:
@@ -95,14 +98,15 @@ def get_students(service, course_id):
             name = f"{s['profile']['name'].get('familyName', '')} {s['profile']['name'].get('givenName', '')}"
             students[s["userId"]] = name
 
-        students_request = service.courses().students().list_next(students_request, response)
+        students_request = _.courses().students().list_next(students_request, response)
 
     return dict(sorted(students.items(), key=lambda x: x[1].lower()))
 
-def get_submissions(service, course_id, task_id):
+@st.cache_data(ttl=300)
+def get_submissions(_, course_id, task_id):
     submissions = []
 
-    request = service.courses().courseWork().studentSubmissions().list(
+    request = _.courses().courseWork().studentSubmissions().list(
         courseId=course_id,
         courseWorkId=task_id,
         pageSize=100
@@ -111,7 +115,7 @@ def get_submissions(service, course_id, task_id):
     while request is not None:
         response = request.execute()
         submissions.extend(response.get("studentSubmissions", []))
-        request = service.courses().courseWork().studentSubmissions().list_next(request, response)
+        request = _.courses().courseWork().studentSubmissions().list_next(request, response)
 
     return submissions
 
@@ -128,6 +132,11 @@ if "selected_tasks" not in st.session_state:
 # APP
 # -----------------------------
 st.title("📊 Generador de calificaciones de Classroom")
+
+# Botón para limpiar caché
+if st.button("🔄 Actualizar datos"):
+    st.cache_data.clear()
+    st.success("Caché limpiado")
 
 creds = get_credentials()
 service = build("classroom", "v1", credentials=creds)
@@ -226,7 +235,7 @@ if st.session_state.selected_tasks:
                 df = pd.DataFrame(data, columns=columns)
 
                 # -----------------------------
-                # VISTA PREVIA 🔥
+                # VISTA PREVIA
                 # -----------------------------
                 st.subheader("📝 Vista previa de las notas")
 
