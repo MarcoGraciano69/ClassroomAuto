@@ -1,75 +1,54 @@
+import os
 import streamlit as st
 import pandas as pd
-import json
-import requests
 from openpyxl import load_workbook
+
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# --- CONFIGURACIÓN ---
+# -----------------------------
+# SCOPES
+# -----------------------------
 SCOPES = [
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
     "https://www.googleapis.com/auth/classroom.rosters.readonly",
 ]
-REDIRECT_URI = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
 
-# --- AUTENTICACIÓN ---
+# -----------------------------
+# AUTH
+# -----------------------------
 def get_credentials():
-    if "creds" in st.session_state:
-        return st.session_state.creds
+    creds = None
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
 
-    client_config = json.loads(st.secrets["CREDENTIALS_JSON"])
-    web_config = client_config["web"]
-    
-    # Paso de intercambio manual (evita PKCE/InvalidGrant)
-    if "code" in st.query_params:
-        data = {
-            "code": st.query_params["code"],
-            "client_id": web_config["client_id"],
-            "client_secret": web_config["client_secret"],
-            "redirect_uri": REDIRECT_URI,
-            "grant_type": "authorization_code",
-        }
-        response = requests.post(web_config["token_uri"], data=data)
-        token_data = response.json()
-
-        if "access_token" in token_data:
-            st.session_state.creds = Credentials(
-                token=token_data["access_token"],
-                refresh_token=token_data.get("refresh_token"),
-                token_uri=web_config["token_uri"],
-                client_id=web_config["client_id"],
-                client_secret=web_config["client_secret"],
-                scopes=SCOPES
-            )
-            st.query_params.clear()
-            st.rerun()
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
         else:
-            st.error(f"Error: {token_data.get('error')}")
-            st.stop()
+            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            creds = flow.run_local_server(port=0)
 
-    # Paso de generación de URL de login
-    params = {
-        "client_id": web_config["client_id"],
-        "redirect_uri": REDIRECT_URI,
-        "response_type": "code",
-        "scope": " ".join(SCOPES),
-        "access_type": "offline",
-        "prompt": "consent"
-    }
-    auth_url = f"{web_config['auth_uri']}?{'&'.join([f'{k}={v}' for k, v in params.items()])}"
-    st.title("🔑 Iniciar Sesión")
-    st.link_button("Login con Google", auth_url)
-    st.stop()
+        with open("token.json", "w") as token_file:
+            token_file.write(creds.to_json())
 
-# --- FUNCIONES DE CLASSROOM ---
+    return creds
+
+# -----------------------------
+# API CALLS (CACHEADOS)
+# -----------------------------
+@st.cache_data
 def get_courses(service):
     return service.courses().list().execute().get("courses", [])
 
+@st.cache_data
 def get_coursework(service, course_id):
     return service.courses().courseWork().list(courseId=course_id).execute().get("courseWork", [])
 
+@st.cache_data
 def get_students(service, course_id):
     students = {}
     request = service.courses().students().list(courseId=course_id)
@@ -83,68 +62,188 @@ def get_students(service, course_id):
 
 def get_submissions(service, course_id, task_id):
     submissions = []
-    request = service.courses().courseWork().studentSubmissions().list(courseId=course_id, courseWorkId=task_id, pageSize=100)
+    request = service.courses().courseWork().studentSubmissions().list(
+        courseId=course_id, courseWorkId=task_id, pageSize=100
+    )
     while request:
         response = request.execute()
         submissions.extend(response.get("studentSubmissions", []))
-        request = service.courses().courseWork().list_next(request, response)
+        request = service.courses().courseWork().studentSubmissions().list_next(request, response)
     return submissions
 
-# --- INTERFAZ PRINCIPAL ---
-def main():
-    st.title("📊 Generador de calificaciones")
-    creds = get_credentials()
-    service = build("classroom", "v1", credentials=creds)
+# -----------------------------
+# PROCESAMIENTO
+# -----------------------------
+def build_dataframe(grades, selected_tasks_clean):
+    data = []
+    for student, scores in grades.items():
+        promedio = round(sum(scores)/len(scores), 2) if scores else 0
+        data.append([student] + scores + [promedio])
+    return pd.DataFrame(data, columns=["Alumno"] + selected_tasks_clean + ["Promedio"])
 
-    courses = get_courses(service)
-    if not courses:
-        st.warning("No hay cursos.")
-        return
+# -----------------------------
+# SESSION STATE
+# -----------------------------
+if "selected_tasks" not in st.session_state:
+    st.session_state.selected_tasks = []
 
-    selected_course_name = st.selectbox("Selecciona curso", [c["name"] for c in courses])
-    course_id = next(c["id"] for c in courses if c["name"] == selected_course_name)
+# -----------------------------
+# UI
+# -----------------------------
+st.title("📊 Generador PRO de calificaciones")
 
-    tasks = get_coursework(service, course_id)
-    # Enumeración de tareas: "1 - Tarea..."
-    task_options = [f"{i+1} - {task['title']}" for i, task in enumerate(tasks)]
-    
-    selected_labels = st.multiselect("Selecciona tareas", task_options)
+creds = get_credentials()
+service = build("classroom", "v1", credentials=creds)
 
-    if st.button("Generar Excel"):
-        if not selected_labels:
-            st.error("Por favor, selecciona al menos una tarea.")
-            return
+# -----------------------------
+# CURSOS
+# -----------------------------
+courses = get_courses(service)
+if not courses:
+    st.warning("No se encontraron cursos.")
+    st.stop()
+
+course_names = [c["name"] for c in courses]
+selected_course_name = st.selectbox("Selecciona curso", course_names)
+selected_course = next(c for c in courses if c["name"] == selected_course_name)
+course_id = selected_course["id"]
+
+# -----------------------------
+# TAREAS
+# -----------------------------
+tasks = get_coursework(service, course_id)
+if not tasks:
+    st.warning("No hay tareas.")
+    st.stop()
+
+task_options = [f"{i+1} - {t['title']}" for i, t in enumerate(tasks)]
+
+with st.form("form_tareas"):
+    selected = st.multiselect(
+        "Selecciona tareas",
+        task_options,
+        default=st.session_state.selected_tasks
+    )
+    submit = st.form_submit_button("Confirmar")
+
+if submit:
+    st.session_state.selected_tasks = selected
+
+# -----------------------------
+# GENERAR
+# -----------------------------
+if st.session_state.selected_tasks:
+
+    st.write(f"📚 Curso: {selected_course_name}")
+    st.write(f"📝 Tareas seleccionadas: {len(st.session_state.selected_tasks)}")
+
+    if st.button("Generar análisis + Excel"):
 
         students = get_students(service, course_id)
         grades = {name: [] for name in students.values()}
-        
-        # Recuperar objetos de tareas originales mediante el índice
-        selected_tasks_objs = [tasks[int(label.split(" - ")[0]) - 1] for label in selected_labels]
-        # Títulos limpios para el encabezado del Excel
-        clean_titles = [t["title"] for t in selected_tasks_objs]
 
-        for task in selected_tasks_objs:
+        selected_tasks_objs = [tasks[int(t.split(" - ")[0]) - 1] for t in st.session_state.selected_tasks]
+        selected_tasks_clean = [t.split(" - ", 1)[1] for t in st.session_state.selected_tasks]
+
+        progress = st.progress(0)
+
+        for i, task in enumerate(selected_tasks_objs):
+
             submissions = get_submissions(service, course_id, task["id"])
-            results = {sub["userId"]: (10 if any(e.get("stateHistory", {}).get("state") == "TURNED_IN" for e in sub.get("submissionHistory", [])) or (sub.get("assignedGrade", 0) > 0) else 0) for sub in submissions}
-            
+            results = {}
+
+            for sub in submissions:
+                student_id = sub["userId"]
+                history = sub.get("submissionHistory", [])
+
+                entrego = False
+                for event in history:
+                    if "stateHistory" in event and event["stateHistory"]["state"] == "TURNED_IN":
+                        entrego = True
+                        break
+
+                assigned = sub.get("assignedGrade")
+                if not entrego and assigned and assigned > 0:
+                    entrego = True
+
+                results[student_id] = 10 if entrego else 0
+
             for uid, name in students.items():
                 grades[name].append(results.get(uid, 0))
 
-        data = [[name] + scores + [round(sum(scores)/len(scores), 2) if scores else 0] for name, scores in grades.items()]
-        df = pd.DataFrame(data, columns=["Alumno"] + clean_titles + ["Promedio"])
-        
-        file_name = f"calificaciones_{selected_course_name.replace(' ', '_')}.xlsx"
+            progress.progress((i+1)/len(selected_tasks_objs))
+
+        # DataFrame
+        df = build_dataframe(grades, selected_tasks_clean)
+
+        # -----------------------------
+        # INSIGHTS
+        # -----------------------------
+        st.subheader("📊 Análisis")
+
+        group_avg = df["Promedio"].mean()
+        st.metric("Promedio del grupo", round(group_avg, 2))
+
+        at_risk = df[df["Promedio"] < 6]
+        top = df[df["Promedio"] >= 9]
+
+        if group_avg < 7:
+            st.warning("⚠️ Bajo rendimiento general")
+
+        if len(at_risk) > len(df)*0.3:
+            st.error("🚨 Muchos alumnos en riesgo")
+
+        st.write("⚠️ Alumnos en riesgo")
+        st.dataframe(at_risk)
+
+        st.write("🏆 Alumnos destacados")
+        st.dataframe(top)
+
+        # -----------------------------
+        # RANKING
+        # -----------------------------
+        st.subheader("🏆 Ranking")
+
+        df_sorted = df.sort_values(by="Promedio", ascending=False)
+        df_sorted["Ranking"] = range(1, len(df_sorted)+1)
+        st.dataframe(df_sorted)
+
+        # -----------------------------
+        # FILTRO
+        # -----------------------------
+        st.subheader("🔍 Filtro")
+
+        min_avg = st.slider("Promedio mínimo", 0.0, 10.0, 0.0)
+        filtered_df = df[df["Promedio"] >= min_avg]
+        st.dataframe(filtered_df)
+
+        # -----------------------------
+        # GRÁFICA
+        # -----------------------------
+        st.subheader("📈 Visualización")
+        st.bar_chart(df.set_index("Alumno")["Promedio"])
+
+        # -----------------------------
+        # EXCEL
+        # -----------------------------
+        file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
         df.to_excel(file_name, index=False)
-        
-        # Ajustar ancho de columnas
+
         wb = load_workbook(file_name)
         ws = wb.active
+
         for col in ws.columns:
-            ws.column_dimensions[col[0].column_letter].width = max(len(str(c.value)) for c in col) + 2
+            max_length = max(len(str(c.value)) if c.value else 0 for c in col)
+            ws.column_dimensions[col[0].column_letter].width = max_length + 2
+
         wb.save(file_name)
 
-        with open(file_name, "rb") as f:
-            st.download_button("Descargar Excel", f, file_name)
+        st.success("Excel generado correctamente")
 
-if __name__ == "__main__":
-    main()
+        with open(file_name, "rb") as f:
+            st.download_button(
+                "Descargar Excel",
+                f,
+                file_name=file_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
