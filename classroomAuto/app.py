@@ -31,7 +31,7 @@ def load_saved_credentials():
 
 def get_credentials():
 
-    saved_creds = load.saved_credentials()
+    saved_creds = load_saved_credentials()
 
     if saved_creds:
         return saved_creds
