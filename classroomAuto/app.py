@@ -20,7 +20,23 @@ SCOPES = [
 # -----------------------------
 # LOGIN (OAuth WEB)
 # -----------------------------
+
+def load_saved_credentials():
+    if "creds_json" in st.session_state:
+        return Credentials.from_authorized_user_info(
+            json.loads(st.session_state.creds_json),
+            SCOPES
+        )
+    return None
+
 def get_credentials():
+
+    saved_creds = load.saved_credentials()
+
+    if saved_creds:
+        return saved_creds
+
+    
     if "creds" in st.session_state:
         return st.session_state.creds
 
@@ -52,6 +68,7 @@ def get_credentials():
             )
 
             st.session_state.creds = creds
+            st.session_state.creds_json = creds.to_json()
             st.query_params.clear()
             st.rerun()
         else:
