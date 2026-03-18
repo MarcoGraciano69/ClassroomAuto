@@ -1,11 +1,10 @@
-import os
 import streamlit as st
 import pandas as pd
 from openpyxl import load_workbook
+import json
+import requests
 
-from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 # -----------------------------
@@ -18,49 +17,81 @@ SCOPES = [
 ]
 
 # -----------------------------
-# Función para obtener credenciales
+# LOGIN (OAuth WEB)
 # -----------------------------
 def get_credentials():
-    creds = None
+    if "creds" in st.session_state:
+        return st.session_state.creds
 
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+    client_config = json.loads(st.secrets["CREDENTIALS_JSON"])
+    web_config = client_config["web"]
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+    REDIRECT_URI = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
+
+    # Si Google ya regresó con ?code=
+    if "code" in st.query_params:
+        data = {
+            "code": st.query_params["code"],
+            "client_id": web_config["client_id"],
+            "client_secret": web_config["client_secret"],
+            "redirect_uri": REDIRECT_URI,
+            "grant_type": "authorization_code",
+        }
+
+        response = requests.post(web_config["token_uri"], data=data)
+        token_data = response.json()
+
+        if "access_token" in token_data:
+            creds = Credentials(
+                token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                token_uri=web_config["token_uri"],
+                client_id=web_config["client_id"],
+                client_secret=web_config["client_secret"],
+                scopes=SCOPES,
+            )
+
+            st.session_state.creds = creds
+            st.query_params.clear()
+            st.rerun()
         else:
-            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
-            creds = flow.run_local_server(port=0)
+            st.error(token_data)
+            st.stop()
 
-        with open("token.json", "w") as token_file:
-            token_file.write(creds.to_json())
+    # Generar URL de login
+    params = {
+        "client_id": web_config["client_id"],
+        "redirect_uri": REDIRECT_URI,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",
+        "prompt": "consent",
+    }
 
-    return creds
+    auth_url = f"{web_config['auth_uri']}?{'&'.join([f'{k}={v}' for k,v in params.items()])}"
+
+    st.title("🔐 Iniciar sesión con Google")
+    st.link_button("Login", auth_url)
+    st.stop()
 
 # -----------------------------
-# Función para obtener cursos
+# Funciones de Classroom
 # -----------------------------
 def get_courses(service):
     results = service.courses().list().execute()
     return results.get("courses", [])
 
-# -----------------------------
-# Función para obtener tareas
-# -----------------------------
 def get_coursework(service, course_id):
     results = service.courses().courseWork().list(courseId=course_id).execute()
     return results.get("courseWork", [])
 
-# -----------------------------
-# Función para obtener alumnos
-# -----------------------------
 def get_students(service, course_id):
     students_request = service.courses().students().list(courseId=course_id)
     students = {}
 
     while students_request is not None:
         response = students_request.execute()
+
         for s in response.get("students", []):
             name = f"{s['profile']['name'].get('familyName', '')} {s['profile']['name'].get('givenName', '')}"
             students[s["userId"]] = name
@@ -69,9 +100,6 @@ def get_students(service, course_id):
 
     return dict(sorted(students.items(), key=lambda x: x[1].lower()))
 
-# -----------------------------
-# Función para obtener entregas
-# -----------------------------
 def get_submissions(service, course_id, task_id):
     submissions = []
 
@@ -89,7 +117,7 @@ def get_submissions(service, course_id, task_id):
     return submissions
 
 # -----------------------------
-# Inicializar session_state
+# Inicializar estado
 # -----------------------------
 if "selected_course" not in st.session_state:
     st.session_state.selected_course = None
@@ -98,9 +126,9 @@ if "selected_tasks" not in st.session_state:
     st.session_state.selected_tasks = []
 
 # -----------------------------
-# Streamlit App
+# APP
 # -----------------------------
-st.title("Generador de calificaciones de Classroom")
+st.title("📊 Generador de calificaciones de Classroom")
 
 creds = get_credentials()
 service = build("classroom", "v1", credentials=creds)
@@ -125,7 +153,7 @@ st.session_state.selected_course = next(
 selected_course_id = st.session_state.selected_course["id"]
 
 # -----------------------------
-# Form para seleccionar tareas
+# Selección de tareas
 # -----------------------------
 tasks = get_coursework(service, selected_course_id)
 
@@ -147,7 +175,7 @@ if submitted:
     st.session_state.selected_tasks = selected_task_titles
 
 # -----------------------------
-# Generar Excel (fuera del form)
+# Generar Excel
 # -----------------------------
 if st.session_state.selected_tasks:
 
@@ -201,7 +229,7 @@ if st.session_state.selected_tasks:
         file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
         df.to_excel(file_name, index=False)
 
-        # Ajustar ancho columnas
+        # Ajustar columnas
         wb = load_workbook(file_name)
         ws = wb.active
 
@@ -217,7 +245,7 @@ if st.session_state.selected_tasks:
 
         wb.save(file_name)
 
-        st.success(f"Archivo Excel generado correctamente: `{file_name}`")
+        st.success(f"Archivo generado: {file_name}")
 
         st.download_button(
             label="Descargar Excel",
