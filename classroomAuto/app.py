@@ -8,9 +8,64 @@ from concurrent.futures import ThreadPoolExecutor
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# -----------------------------
-# SCOPES necesarios de Classroom
-# -----------------------------
+# 💖 ESTILO CURSI 💖
+st.markdown(
+    """
+    <style>
+    body {
+        background: linear-gradient(135deg, #e3f2fd, #fce4ec);
+    }
+
+    .main-title {
+        text-align: center;
+        font-size: 40px;
+        color: #ff4b6e;
+        font-weight: bold;
+    }
+
+    .subtitle {
+        text-align: center;
+        font-size: 18px;
+        color: #6a1b9a;
+    }
+
+    .love-box {
+        text-align: center;
+        padding: 15px;
+        border-radius: 15px;
+        background-color: #ffffffaa;
+        margin-bottom: 15px;
+        font-size: 18px;
+    }
+
+    .heart {
+        position: fixed;
+        bottom: -10px;
+        font-size: 20px;
+        animation: float 6s infinite;
+        opacity: 0.7;
+    }
+
+    @keyframes float {
+        0% {transform: translateY(0);}
+        100% {transform: translateY(-100vh);}
+    }
+    </style>
+
+    <div class="heart" style="left:10%;">💖</div>
+    <div class="heart" style="left:20%; animation-duration:5s;">💗</div>
+    <div class="heart" style="left:30%; animation-duration:7s;">💓</div>
+    <div class="heart" style="left:40%; animation-duration:4s;">💞</div>
+    <div class="heart" style="left:50%; animation-duration:6s;">💕</div>
+    <div class="heart" style="left:60%; animation-duration:5s;">💘</div>
+    <div class="heart" style="left:70%; animation-duration:8s;">💝</div>
+    <div class="heart" style="left:80%; animation-duration:6s;">💖</div>
+    <div class="heart" style="left:90%; animation-duration:7s;">💗</div>
+    """,
+    unsafe_allow_html=True
+)
+
+# 💖 SCOPES
 SCOPES = [
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
@@ -18,9 +73,8 @@ SCOPES = [
 ]
 
 # -----------------------------
-# LOGIN (OAuth WEB)
+# LOGIN
 # -----------------------------
-
 def load_saved_credentials():
     if "creds_json" in st.session_state:
         return Credentials.from_authorized_user_info(
@@ -30,13 +84,10 @@ def load_saved_credentials():
     return None
 
 def get_credentials():
-
     saved_creds = load_saved_credentials()
-
     if saved_creds:
         return saved_creds
 
-    
     if "creds" in st.session_state:
         return st.session_state.creds
 
@@ -87,12 +138,12 @@ def get_credentials():
 
     auth_url = f"{web_config['auth_uri']}?{'&'.join([f'{k}={v}' for k,v in params.items()])}"
 
-    st.title("🔐 Iniciar sesión con Google")
-    st.link_button("Login", auth_url)
+    st.markdown("<div class='main-title'>💖 Inicia sesión mi amor 💖</div>", unsafe_allow_html=True)
+    st.link_button("💌 Login con Google", auth_url)
     st.stop()
 
 # -----------------------------
-# Funciones con CACHÉ
+# CACHE
 # -----------------------------
 @st.cache_data(ttl=300)
 def get_courses(_):
@@ -116,7 +167,6 @@ def get_students(_, course_id):
 
     return dict(sorted(students.items(), key=lambda x: x[1].lower()))
 
-
 def get_submissions(service, course_id, task_id):
     submissions = []
     request = service.courses().courseWork().studentSubmissions().list(
@@ -133,31 +183,42 @@ def get_submissions(service, course_id, task_id):
     return submissions
 
 # -----------------------------
-# Estado
+# UI PRINCIPAL
 # -----------------------------
-if "selected_course" not in st.session_state:
-    st.session_state.selected_course = None
+st.markdown(
+    """
+    <div class="main-title">
+    💖 Para mi Itzelita preciosa 💖
+    </div>
+    <div class="subtitle">
+    Hecho con todo mi amor para ti mi vida 🫶✨
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
-if "selected_tasks" not in st.session_state:
-    st.session_state.selected_tasks = []
-
-# -----------------------------
-# APP
-# -----------------------------
-st.title("📊 Generador de calificaciones de Classroom")
+st.markdown(
+    """
+    <div class="love-box">
+    💕 Te amo cielo 💕<br>
+    💖 Eres la mejor mi vida 💖<br>
+    💗 Mi corazón es tuyo siempre 💗<br>
+    💞 Te quiero muchísimo amor de mi vida 💞<br>
+    💘 Eres lo más hermoso que me ha pasado 💘<br>
+    🌸 Mi Itzelita preciosa 🌸
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 if st.button("🔄 Actualizar datos"):
     st.cache_data.clear()
-    st.success("Caché limpiado")
+    st.success("Caché limpiado 💕")
 
 creds = get_credentials()
 service = build("classroom", "v1", credentials=creds)
 
 courses = get_courses(service)
-if not courses:
-    st.warning("No se encontraron cursos.")
-    st.stop()
-
 course_names = [c["name"] for c in courses]
 selected_course_name = st.selectbox("Selecciona curso", course_names)
 
@@ -165,33 +226,23 @@ selected_course = next(c for c in courses if c["name"] == selected_course_name)
 selected_course_id = selected_course["id"]
 
 tasks = get_coursework(service, selected_course_id)
-if not tasks:
-    st.warning("No hay tareas en este curso.")
-    st.stop()
-
 task_options = [f"{i+1} - {t['title']}" for i,t in enumerate(tasks)]
 
 with st.form("tareas_form"):
     selected_task_titles = st.multiselect(
-        "Selecciona tareas en el orden deseado",
-        options=task_options,
-        default=st.session_state.selected_tasks
+        "Selecciona tareas 💕",
+        options=task_options
     )
-    submitted = st.form_submit_button("Confirmar selección")
-
-if submitted:
-    st.session_state.selected_tasks = selected_task_titles
+    submitted = st.form_submit_button("Confirmar selección 💖")
 
 # -----------------------------
 # GENERAR
 # -----------------------------
-if st.session_state.selected_tasks:
+if selected_task_titles:
 
-    st.warning("⚠️ Puede tardar dependiendo del número de tareas")
+    if st.button("Generar Excel 💕"):
 
-    if st.button("Generar Excel"):
-
-        with st.spinner("⏳ Procesando..."):
+        with st.spinner("⏳ Procesando con amor..."):
 
             try:
                 students = get_students(service, selected_course_id)
@@ -199,33 +250,30 @@ if st.session_state.selected_tasks:
 
                 selected_tasks_objs = [
                     tasks[int(t.split(" - ")[0]) - 1]
-                    for t in st.session_state.selected_tasks
+                    for t in selected_task_titles
                 ]
 
-                # 🔥 PARALELIZACIÓN
                 def process_task(task):
-                    # 🔥 crear service independiente por thread
                     local_service = build("classroom", "v1", credentials=creds)
-                
                     submissions = get_submissions(local_service, selected_course_id, task["id"])
                     results_by_student = {}
-                
+
                     for sub in submissions:
                         student_id = sub["userId"]
                         history = sub.get("submissionHistory", [])
-                
+
                         entrego = any(
                             "stateHistory" in e and e["stateHistory"]["state"] == "TURNED_IN"
                             for e in history
                         )
-                
+
                         assigned = sub.get("assignedGrade")
-                
+
                         if not entrego and assigned and assigned > 0:
                             entrego = True
-                
+
                         results_by_student[student_id] = 10 if entrego else 0
-                
+
                     return results_by_student
 
                 with ThreadPoolExecutor(max_workers=3) as executor:
@@ -237,42 +285,37 @@ if st.session_state.selected_tasks:
 
                 data = []
                 for student, scores in grades.items():
-                    promedio = round(sum(scores)/len(scores), 2) if scores else 0
+                    promedio = round(sum(scores)/len(scores), 2)
                     data.append([student] + scores + [promedio])
 
-                columns = ["Alumno"] + st.session_state.selected_tasks + ["Promedio"]
+                columns = ["Alumno"] + selected_task_titles + ["Promedio"]
                 df = pd.DataFrame(data, columns=columns)
 
-                # Vista previa
-                st.subheader("📝 Vista previa")
-                st.dataframe(
-                    df.style
-                    .applymap(lambda x: "background-color: #ffcdd2" if isinstance(x,(int,float)) and x==0 else "")
-                    .applymap(lambda x: "background-color: #c8e6c9" if isinstance(x,(int,float)) and x==10 else ""),
-                    use_container_width=True
-                )
+                st.dataframe(df)
 
-                # Excel
-                file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
+                file_name = "calificaciones.xlsx"
                 df.to_excel(file_name, index=False)
 
-                wb = load_workbook(file_name)
-                ws = wb.active
+                st.success("Archivo generado 💕✨")
+                st.balloons()
 
-                for col in ws.columns:
-                    max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                    ws.column_dimensions[col[0].column_letter].width = max_len + 2
-
-                wb.save(file_name)
-
-                st.success("Archivo generado")
                 st.download_button(
                     "📥 Descargar Excel",
                     data=open(file_name,"rb").read(),
-                    file_name=file_name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    file_name=file_name
+                )
+
+                st.markdown(
+                    """
+                    <div class="love-box">
+                    💌 Hecho con amor para ti 💌<br>
+                    💖 Te amo muchísimo mi cielo 💖<br>
+                    💕 Siempre contigo mi amor 💕
+                    </div>
+                    """,
+                    unsafe_allow_html=True
                 )
 
             except Exception as e:
-                st.error("Error procesando 😢")
+                st.error("Error 😢")
                 st.write(e)
