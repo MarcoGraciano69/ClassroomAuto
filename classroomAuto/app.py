@@ -8,11 +8,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
------------------------------
 
-SCOPES necesarios de Classroom
-
------------------------------
 
 SCOPES = [
 "https://www.googleapis.com/auth/classroom.courses.readonly",
@@ -20,11 +16,7 @@ SCOPES = [
 "https://www.googleapis.com/auth/classroom.rosters.readonly",
 ]
 
------------------------------
 
-Función para obtener credenciales
-
------------------------------
 
 def get_credentials():
 creds = None
@@ -43,31 +35,16 @@ if not creds or not creds.valid:
 
 return creds
 
------------------------------
-
-Función para obtener cursos
-
------------------------------
 
 def get_courses(service):
 results = service.courses().list().execute()
 return results.get("courses", [])
 
------------------------------
-
-Función para obtener tareas
-
------------------------------
 
 def get_coursework(service, course_id):
 results = service.courses().courseWork().list(courseId=course_id).execute()
 return results.get("courseWork", [])
 
------------------------------
-
-Función para obtener alumnos
-
------------------------------
 
 def get_students(service, course_id):
 students_request = service.courses().students().list(courseId=course_id)
@@ -80,11 +57,6 @@ students[s["userId"]] = name
 students_request = service.courses().students().list_next(students_request, response)
 return dict(sorted(students.items(), key=lambda x: x[1].lower()))
 
------------------------------
-
-Función para obtener entregas
-
------------------------------
 
 def get_submissions(service, course_id, task_id):
 submissions = []
@@ -97,33 +69,18 @@ submissions.extend(response.get("studentSubmissions", []))
 request = service.courses().courseWork().studentSubmissions().list_next(request, response)
 return submissions
 
------------------------------
 
-Inicializar session_state
-
------------------------------
 
 if "selected_course" not in st.session_state:
 st.session_state.selected_course = None
 if "selected_tasks" not in st.session_state:
 st.session_state.selected_tasks = []
 
------------------------------
-
-Streamlit App
-
------------------------------
 
 st.title("Generador de calificaciones de Classroom")
 
 creds = get_credentials()
 service = build("classroom", "v1", credentials=creds)
-
------------------------------
-
-Selección de curso
-
------------------------------
 
 courses = get_courses(service)
 if not courses:
@@ -135,11 +92,7 @@ selected_course_name = st.selectbox("Selecciona curso", course_names)
 st.session_state.selected_course = next(course for course in courses if course["name"] == selected_course_name)
 selected_course_id = st.session_state.selected_course["id"]
 
------------------------------
 
-Form para seleccionar tareas
-
------------------------------
 
 tasks = get_coursework(service, selected_course_id)
 if not tasks:
@@ -159,11 +112,7 @@ submitted = st.form_submit_button("Confirmar selección de tareas")
 if submitted:
 st.session_state.selected_tasks = selected_task_titles
 
------------------------------
 
-Generar Excel (fuera del form)
-
------------------------------
 
 if st.session_state.selected_tasks:
 if st.button("Generar Excel"):
