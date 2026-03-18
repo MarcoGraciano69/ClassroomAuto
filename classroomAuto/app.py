@@ -33,7 +33,7 @@ st.markdown(
         text-align: center;
         padding: 15px;
         border-radius: 15px;
-        background-color: #ffffffaa;
+        background-color: #ffffffcc;
         margin-bottom: 15px;
         font-size: 18px;
     }
@@ -65,7 +65,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# 💖 SCOPES
+# SCOPES
 SCOPES = [
     "https://www.googleapis.com/auth/classroom.courses.readonly",
     "https://www.googleapis.com/auth/classroom.student-submissions.students.readonly",
@@ -183,7 +183,7 @@ def get_submissions(service, course_id, task_id):
     return submissions
 
 # -----------------------------
-# UI PRINCIPAL
+# UI
 # -----------------------------
 st.markdown(
     """
@@ -291,10 +291,27 @@ if selected_task_titles:
                 columns = ["Alumno"] + selected_task_titles + ["Promedio"]
                 df = pd.DataFrame(data, columns=columns)
 
-                st.dataframe(df)
+                # 🔥 VISTA PREVIA CON COLORES
+                st.subheader("📝 Vista previa")
+                st.dataframe(
+                    df.style
+                    .applymap(lambda x: "background-color: #ffcdd2" if isinstance(x,(int,float)) and x==0 else "")
+                    .applymap(lambda x: "background-color: #c8e6c9" if isinstance(x,(int,float)) and x==10 else ""),
+                    use_container_width=True
+                )
 
-                file_name = "calificaciones.xlsx"
+                # 🔥 NOMBRE CON CURSO
+                file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
                 df.to_excel(file_name, index=False)
+
+                wb = load_workbook(file_name)
+                ws = wb.active
+
+                for col in ws.columns:
+                    max_len = max(len(str(c.value)) if c.value else 0 for c in col)
+                    ws.column_dimensions[col[0].column_letter].width = max_len + 2
+
+                wb.save(file_name)
 
                 st.success("Archivo generado 💕✨")
                 st.balloons()
@@ -310,7 +327,8 @@ if selected_task_titles:
                     <div class="love-box">
                     💌 Hecho con amor para ti 💌<br>
                     💖 Te amo muchísimo mi cielo 💖<br>
-                    💕 Siempre contigo mi amor 💕
+                    💕 Siempre contigo mi amor 💕<br>
+                    💗 Eres la mejor mi vida 💗
                     </div>
                     """,
                     unsafe_allow_html=True
