@@ -102,7 +102,7 @@ def get_students(_, course_id):
 
 def get_submissions(service, course_id, task_id):
     submissions = []
-    request = _.courses().courseWork().studentSubmissions().list(
+    request = service.courses().courseWork().studentSubmissions().list(
         courseId=course_id,
         courseWorkId=task_id,
         pageSize=100
@@ -111,7 +111,7 @@ def get_submissions(service, course_id, task_id):
     while request is not None:
         response = request.execute()
         submissions.extend(response.get("studentSubmissions", []))
-        request = _.courses().courseWork().studentSubmissions().list_next(request, response)
+        request = service.courses().courseWork().studentSubmissions().list_next(request, response)
 
     return submissions
 
