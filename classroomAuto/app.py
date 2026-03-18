@@ -28,7 +28,6 @@ def get_credentials():
 
     REDIRECT_URI = "https://classroomauto-waii8w8kkpdnbm9226rdwu.streamlit.app/"
 
-    # Si Google ya regresó con ?code=
     if "code" in st.query_params:
         data = {
             "code": st.query_params["code"],
@@ -55,10 +54,10 @@ def get_credentials():
             st.query_params.clear()
             st.rerun()
         else:
-            st.error(token_data)
+            st.error("Error al autenticar con Google")
+            st.write(token_data)
             st.stop()
 
-    # Generar URL de login
     params = {
         "client_id": web_config["client_id"],
         "redirect_uri": REDIRECT_URI,
@@ -117,7 +116,7 @@ def get_submissions(service, course_id, task_id):
     return submissions
 
 # -----------------------------
-# Inicializar estado
+# Estado
 # -----------------------------
 if "selected_course" not in st.session_state:
     st.session_state.selected_course = None
@@ -133,9 +132,6 @@ st.title("📊 Generador de calificaciones de Classroom")
 creds = get_credentials()
 service = build("classroom", "v1", credentials=creds)
 
-# -----------------------------
-# Selección de curso
-# -----------------------------
 courses = get_courses(service)
 
 if not courses:
@@ -152,9 +148,6 @@ st.session_state.selected_course = next(
 
 selected_course_id = st.session_state.selected_course["id"]
 
-# -----------------------------
-# Selección de tareas
-# -----------------------------
 tasks = get_coursework(service, selected_course_id)
 
 if not tasks:
@@ -175,81 +168,105 @@ if submitted:
     st.session_state.selected_tasks = selected_task_titles
 
 # -----------------------------
-# Generar Excel
+# GENERAR EXCEL + UX
 # -----------------------------
 if st.session_state.selected_tasks:
 
+    st.warning("⚠️ Este proceso puede tardar unos segundos dependiendo del número de tareas")
+
     if st.button("Generar Excel"):
 
-        students = get_students(service, selected_course_id)
-        grades = {name: [] for name in students.values()}
+        with st.spinner("⏳ Procesando datos de Classroom..."):
 
-        selected_tasks_objs = [
-            tasks[int(t.split(" - ")[0]) - 1]
-            for t in st.session_state.selected_tasks
-        ]
+            try:
+                st.info("Procesando tareas y alumnos...")
 
-        for task in selected_tasks_objs:
+                students = get_students(service, selected_course_id)
+                grades = {name: [] for name in students.values()}
 
-            submissions = get_submissions(service, selected_course_id, task["id"])
-            results_by_student = {}
+                selected_tasks_objs = [
+                    tasks[int(t.split(" - ")[0]) - 1]
+                    for t in st.session_state.selected_tasks
+                ]
 
-            for sub in submissions:
-                student_id = sub["userId"]
-                history = sub.get("submissionHistory", [])
+                for task in selected_tasks_objs:
 
-                entrego = False
+                    submissions = get_submissions(service, selected_course_id, task["id"])
+                    results_by_student = {}
 
-                for event in history:
-                    if "stateHistory" in event and event["stateHistory"]["state"] == "TURNED_IN":
-                        entrego = True
-                        break
+                    for sub in submissions:
+                        student_id = sub["userId"]
+                        history = sub.get("submissionHistory", [])
 
-                assigned = sub.get("assignedGrade")
+                        entrego = False
 
-                if not entrego and assigned is not None and assigned > 0:
-                    entrego = True
+                        for event in history:
+                            if "stateHistory" in event and event["stateHistory"]["state"] == "TURNED_IN":
+                                entrego = True
+                                break
 
-                score = 10 if entrego else 0
-                results_by_student[student_id] = score
+                        assigned = sub.get("assignedGrade")
 
-            for student_id, name in students.items():
-                grades[name].append(results_by_student.get(student_id, 0))
+                        if not entrego and assigned is not None and assigned > 0:
+                            entrego = True
 
-        # Crear Excel
-        data = []
+                        score = 10 if entrego else 0
+                        results_by_student[student_id] = score
 
-        for student, scores in grades.items():
-            promedio = round(sum(scores)/len(scores), 2) if scores else 0
-            data.append([student] + scores + [promedio])
+                    for student_id, name in students.items():
+                        grades[name].append(results_by_student.get(student_id, 0))
 
-        columns = ["Alumno"] + st.session_state.selected_tasks + ["Promedio"]
-        df = pd.DataFrame(data, columns=columns)
+                data = []
 
-        file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
-        df.to_excel(file_name, index=False)
+                for student, scores in grades.items():
+                    promedio = round(sum(scores)/len(scores), 2) if scores else 0
+                    data.append([student] + scores + [promedio])
 
-        # Ajustar columnas
-        wb = load_workbook(file_name)
-        ws = wb.active
+                columns = ["Alumno"] + st.session_state.selected_tasks + ["Promedio"]
+                df = pd.DataFrame(data, columns=columns)
 
-        for column in ws.columns:
-            max_length = 0
-            column_letter = column[0].column_letter
+                # -----------------------------
+                # VISTA PREVIA 🔥
+                # -----------------------------
+                st.subheader("📝 Vista previa de las notas")
 
-            for cell in column:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
+                st.dataframe(
+                    df.style
+                    .applymap(lambda x: "background-color: #ffcdd2" if isinstance(x, (int, float)) and x == 0 else "")
+                    .applymap(lambda x: "background-color: #c8e6c9" if isinstance(x, (int, float)) and x == 10 else ""),
+                    use_container_width=True
+                )
 
-            ws.column_dimensions[column_letter].width = max_length + 2
+                # -----------------------------
+                # GENERAR EXCEL
+                # -----------------------------
+                file_name = f"calificaciones_{selected_course_name.replace(' ','_')}.xlsx"
+                df.to_excel(file_name, index=False)
 
-        wb.save(file_name)
+                wb = load_workbook(file_name)
+                ws = wb.active
 
-        st.success(f"Archivo generado: {file_name}")
+                for column in ws.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
 
-        st.download_button(
-            label="Descargar Excel",
-            file_name=file_name,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            data=open(file_name, "rb").read()
-        )
+                    for cell in column:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+
+                    ws.column_dimensions[column_letter].width = max_length + 2
+
+                wb.save(file_name)
+
+                st.success(f"Archivo generado: {file_name}")
+
+                st.download_button(
+                    label="📥 Descargar Excel",
+                    file_name=file_name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    data=open(file_name, "rb").read()
+                )
+
+            except Exception as e:
+                st.error("Ocurrió un error al procesar los datos 😢")
+                st.write(e)
