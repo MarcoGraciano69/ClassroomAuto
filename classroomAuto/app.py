@@ -295,8 +295,9 @@ if selected_task_titles:
                 st.subheader("📝 Vista previa")
                 st.dataframe(
                     df.style
-                    .applymap(lambda x: "background-color: #ffcdd2" if isinstance(x,(int,float)) and x==0 else "")
-                    .applymap(lambda x: "background-color: #c8e6c9" if isinstance(x,(int,float)) and x==10 else ""),
+                    df.style
+                    .map(lambda x: "background-color: #ffcdd2" if isinstance(x,(int,float)) and x==0 else "")
+                    .map(lambda x: "background-color: #c8e6c9" if isinstance(x,(int,float)) and x==10 else ""),
                     use_container_width=True
                 )
 
